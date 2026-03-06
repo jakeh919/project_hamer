@@ -23,6 +23,8 @@ const DEFAULT_STATE = {
   holes: [],
   runningTotals: {},
   skinCarryover: 0,
+  auditLogReturnPhase: null,
+  editingFromAudit: false,
 };
 
 function buildInitialHole(holeIndex, gameState) {
@@ -33,10 +35,7 @@ function buildInitialHole(holeIndex, gameState) {
   let teams;
   if (gameMode === '4player' && teamMode === 'fixed') {
     teams = fixedTeams;
-  } else if (gameMode === '4player' && teamMode === 'rotating') {
-    teams = [[], []]; // to be set manually
   } else {
-    // 5-player: wolf picks
     teams = [[], []];
   }
 
@@ -46,7 +45,10 @@ function buildInitialHole(holeIndex, gameState) {
     wolfId = wolf?.id ?? null;
   }
 
-  const hammerValue = getHammerStartValue(baseBet, holeNumber, gameMode, false);
+  const hammerBaseValue = getHammerStartValue(baseBet, holeNumber, gameMode, false);
+
+  // Default all scores to par
+  const grossScores = Object.fromEntries(players.map(p => [p.id, holeData.par]));
 
   return {
     number: holeNumber,
@@ -57,19 +59,29 @@ function buildInitialHole(holeIndex, gameState) {
     wolfId,
     wolfAlone: false,
     skinCarryoverIn: skinCarryover,
-    hammerValue,
-    hammerHolder: 0,
-    hammerConceded: false,
-    hammerConcedeTeam: null,
-    hammerHistory: [],
-    grossScores: {},
+    hammerBaseValue,
+    hammerCount: 0,
+    hammerValue: hammerBaseValue,
+    grossScores,
     netScores: {},
     hammerWinner: null,
-    finalHammerValue: hammerValue,
+    finalHammerValue: hammerBaseValue,
     skinWinner: null,
     skinValue: skinCarryover,
     moneyDeltas: {},
   };
+}
+
+// Recompute all running totals from completed holes (used after any edit)
+function recomputeTotals(holes, players) {
+  const totals = Object.fromEntries(players.map(p => [p.id, 0]));
+  for (const hole of holes) {
+    if (!hole?.moneyDeltas) continue;
+    for (const [pid, delta] of Object.entries(hole.moneyDeltas)) {
+      totals[pid] = (totals[pid] ?? 0) + delta;
+    }
+  }
+  return totals;
 }
 
 function reducer(state, action) {
@@ -81,7 +93,7 @@ function reducer(state, action) {
       return { ...DEFAULT_STATE, phase: 'setup', setupStep: 'players' };
 
     case 'RESUME_GAME':
-      return { ...state, phase: state.phase === 'home' ? 'playing' : state.phase };
+      return { ...state };
 
     case 'SET_SETUP_STEP':
       return { ...state, setupStep: action.step };
@@ -102,10 +114,6 @@ function reducer(state, action) {
       return { ...state, fixedTeams: action.teams };
 
     case 'START_ROUND': {
-      const initialHoles = state.course.holes.map((_, i) =>
-        i === 0 ? buildInitialHole(0, state) : null
-      );
-      // Only build first hole initially
       const firstHole = buildInitialHole(0, state);
       return {
         ...state,
@@ -113,14 +121,14 @@ function reducer(state, action) {
         currentHoleIndex: 0,
         holes: [firstHole],
         skinCarryover: 0,
+        editingFromAudit: false,
       };
     }
 
     case 'SET_HOLE_TEAMS': {
       const { holeIndex, teams } = action;
       const holes = [...state.holes];
-      const hole = { ...holes[holeIndex], teams };
-      holes[holeIndex] = hole;
+      holes[holeIndex] = { ...holes[holeIndex], teams };
       return { ...state, holes };
     }
 
@@ -136,61 +144,30 @@ function reducer(state, action) {
         const others = state.players.filter(p => p.id !== wolfId && p.id !== partnerId).map(p => p.id);
         hole.teams = [[wolfId, partnerId], others];
       }
-      const hammerValue = getHammerStartValue(state.baseBet, hole.number, state.gameMode, hole.wolfAlone);
-      hole.hammerValue = hammerValue;
-      hole.finalHammerValue = hammerValue;
+      const hammerBaseValue = getHammerStartValue(state.baseBet, hole.number, state.gameMode, hole.wolfAlone);
+      hole.hammerBaseValue = hammerBaseValue;
+      hole.hammerValue = hammerBaseValue * Math.pow(2, hole.hammerCount ?? 0);
+      hole.finalHammerValue = hole.hammerValue;
       holes[holeIndex] = hole;
       return { ...state, holes };
     }
 
-    case 'THROW_HAMMER': {
+    case 'INCREMENT_HAMMER': {
       const { holeIndex } = action;
       const holes = [...state.holes];
       const hole = { ...holes[holeIndex] };
-      const newValue = hole.hammerValue * 2;
-      const thrower = hole.hammerHolder;
-      const receiver = thrower === 0 ? 1 : 0;
-      hole.hammerHistory = [
-        ...hole.hammerHistory,
-        { team: thrower, action: 'throw', value: newValue },
-      ];
-      // Hammer is now pending — receiver must accept or concede
-      hole.pendingHammer = true;
-      hole.pendingHammerValue = newValue;
+      hole.hammerCount = (hole.hammerCount ?? 0) + 1;
+      hole.hammerValue = hole.hammerBaseValue * Math.pow(2, hole.hammerCount);
       holes[holeIndex] = hole;
       return { ...state, holes };
     }
 
-    case 'ACCEPT_HAMMER': {
+    case 'DECREMENT_HAMMER': {
       const { holeIndex } = action;
       const holes = [...state.holes];
       const hole = { ...holes[holeIndex] };
-      const receiver = hole.hammerHolder === 0 ? 1 : 0;
-      hole.hammerValue = hole.pendingHammerValue;
-      hole.hammerHolder = receiver;
-      hole.pendingHammer = false;
-      hole.hammerHistory = [
-        ...hole.hammerHistory,
-        { team: receiver, action: 'accept', value: hole.hammerValue },
-      ];
-      holes[holeIndex] = hole;
-      return { ...state, holes };
-    }
-
-    case 'CONCEDE_HAMMER': {
-      const { holeIndex } = action;
-      const holes = [...state.holes];
-      const hole = { ...holes[holeIndex] };
-      // The team that concedes loses at current pending value
-      const concedeTeam = hole.hammerHolder === 0 ? 1 : 0; // receiver concedes
-      hole.hammerConceded = true;
-      hole.hammerConcedeTeam = concedeTeam;
-      hole.hammerValue = hole.pendingHammerValue;
-      hole.pendingHammer = false;
-      hole.hammerHistory = [
-        ...hole.hammerHistory,
-        { team: concedeTeam, action: 'concede', value: hole.hammerValue },
-      ];
+      hole.hammerCount = Math.max(0, (hole.hammerCount ?? 0) - 1);
+      hole.hammerValue = hole.hammerBaseValue * Math.pow(2, hole.hammerCount);
       holes[holeIndex] = hole;
       return { ...state, holes };
     }
@@ -208,32 +185,20 @@ function reducer(state, action) {
       const { holeIndex } = action;
       const holes = [...state.holes];
       const hole = { ...holes[holeIndex] };
-      const { players, baseBet, gameMode, skinCarryover } = state;
+      const { players, baseBet, gameMode } = state;
 
-      // Calculate net scores
       const netScores = calculateNetScores(hole.grossScores, players, hole);
       hole.netScores = netScores;
 
-      // Resolve hammer
-      const { hammerWinner, finalHammerValue: rawHammerValue } = resolveHammer(
-        hole, hole.teams, netScores
-      );
+      const { hammerWinner, finalHammerValue: rawHammerValue } = resolveHammer(hole, hole.teams, netScores);
+      const { skinWinner, skinValue } = resolveSkin(netScores, players, hole.skinCarryoverIn);
 
-      // Resolve skin
-      const { skinWinner, skinValue, carryover } = resolveSkin(
-        netScores, players, hole.skinCarryoverIn
-      );
-
-      // Apply birdie/eagle multipliers
       const { finalHammerValue, finalSkinValue } = applyBirdieEagleMultipliers(
-        hole.grossScores, hole, hole.teams, hammerWinner,
-        rawHammerValue, skinValue, gameMode
+        hole.grossScores, hole, hole.teams, hammerWinner, rawHammerValue, skinValue, gameMode
       );
 
-      // Calculate money deltas
       const moneyDeltas = calculateMoneyDeltas(
-        hole.teams, hammerWinner, finalHammerValue,
-        skinWinner, finalSkinValue, players
+        hole.teams, hammerWinner, finalHammerValue, skinWinner, finalSkinValue, players
       );
 
       hole.hammerWinner = hammerWinner;
@@ -241,24 +206,30 @@ function reducer(state, action) {
       hole.skinWinner = skinWinner;
       hole.skinValue = finalSkinValue;
       hole.moneyDeltas = moneyDeltas;
-
       holes[holeIndex] = hole;
 
-      // Update running totals
-      const runningTotals = { ...state.runningTotals };
-      for (const player of players) {
-        runningTotals[player.id] = (runningTotals[player.id] ?? 0) + (moneyDeltas[player.id] ?? 0);
-      }
+      // Always recompute all totals from scratch (handles edits correctly)
+      const runningTotals = recomputeTotals(holes, players);
 
-      // New skin carryover
       const newSkinCarryover = skinWinner ? 0 : hole.skinCarryoverIn + baseBet;
+
+      const isLastHole = holeIndex === (state.course.holes.length - 1);
+      let nextPhase;
+      if (state.editingFromAudit) {
+        nextPhase = 'audit_log';
+      } else if (isLastHole) {
+        nextPhase = 'complete';
+      } else {
+        nextPhase = 'hole_summary';
+      }
 
       return {
         ...state,
         holes,
         runningTotals,
         skinCarryover: newSkinCarryover,
-        phase: holeIndex === (state.course.holes.length - 1) ? 'complete' : 'hole_summary',
+        phase: nextPhase,
+        editingFromAudit: false,
       };
     }
 
@@ -267,9 +238,10 @@ function reducer(state, action) {
       if (nextIndex >= state.course.holes.length) {
         return { ...state, phase: 'complete' };
       }
-      const newHole = buildInitialHole(nextIndex, state);
       const holes = [...state.holes];
-      holes[nextIndex] = newHole;
+      if (!holes[nextIndex]) {
+        holes[nextIndex] = buildInitialHole(nextIndex, state);
+      }
       return {
         ...state,
         currentHoleIndex: nextIndex,
@@ -280,21 +252,15 @@ function reducer(state, action) {
 
     case 'UNDO_HOLE': {
       const { holeIndex } = action;
-      if (holeIndex <= 0) return state;
       const holes = [...state.holes];
-      // Remove delta from running totals
-      const runningTotals = { ...state.runningTotals };
       const hole = holes[holeIndex];
-      if (hole?.moneyDeltas) {
-        for (const [pid, delta] of Object.entries(hole.moneyDeltas)) {
-          runningTotals[pid] = (runningTotals[pid] ?? 0) - delta;
-        }
-      }
-      // Restore skin carryover
       const skinCarryover = hole?.skinCarryoverIn ?? state.skinCarryover;
-      // Reset current hole to its initial state
-      const resetHole = buildInitialHole(holeIndex, { ...state, runningTotals, skinCarryover });
+      const resetHole = buildInitialHole(holeIndex, { ...state, skinCarryover });
       holes[holeIndex] = resetHole;
+      const runningTotals = recomputeTotals(
+        holes.map((h, i) => i === holeIndex ? null : h),
+        state.players
+      );
       return {
         ...state,
         holes,
@@ -302,8 +268,37 @@ function reducer(state, action) {
         skinCarryover,
         currentHoleIndex: holeIndex,
         phase: 'playing',
+        editingFromAudit: false,
       };
     }
+
+    case 'OPEN_AUDIT_LOG':
+      return {
+        ...state,
+        auditLogReturnPhase: state.phase,
+        phase: 'audit_log',
+      };
+
+    case 'CLOSE_AUDIT_LOG':
+      return {
+        ...state,
+        phase: state.auditLogReturnPhase ?? 'playing',
+        auditLogReturnPhase: null,
+      };
+
+    case 'EDIT_HOLE': {
+      const { holeIndex } = action;
+      return {
+        ...state,
+        currentHoleIndex: holeIndex,
+        phase: 'playing',
+        editingFromAudit: true,
+        auditLogReturnPhase: null,
+      };
+    }
+
+    case 'EXIT_ROUND':
+      return { ...state, phase: 'home' };
 
     case 'FINISH_ROUND':
       return { ...state, phase: 'complete' };
@@ -341,14 +336,17 @@ export function useGameState() {
     setHoleTeams: useCallback((holeIndex, teams) => dispatch({ type: 'SET_HOLE_TEAMS', holeIndex, teams }), []),
     setWolfPartner: useCallback((holeIndex, wolfId, partnerId, wolfAlone) =>
       dispatch({ type: 'SET_WOLF_PARTNER', holeIndex, wolfId, partnerId, wolfAlone }), []),
-    throwHammer: useCallback((holeIndex) => dispatch({ type: 'THROW_HAMMER', holeIndex }), []),
-    acceptHammer: useCallback((holeIndex) => dispatch({ type: 'ACCEPT_HAMMER', holeIndex }), []),
-    concedeHammer: useCallback((holeIndex) => dispatch({ type: 'CONCEDE_HAMMER', holeIndex }), []),
+    incrementHammer: useCallback((holeIndex) => dispatch({ type: 'INCREMENT_HAMMER', holeIndex }), []),
+    decrementHammer: useCallback((holeIndex) => dispatch({ type: 'DECREMENT_HAMMER', holeIndex }), []),
     setGrossScore: useCallback((holeIndex, playerId, score) =>
       dispatch({ type: 'SET_GROSS_SCORE', holeIndex, playerId, score }), []),
     lockHoleScores: useCallback((holeIndex) => dispatch({ type: 'LOCK_HOLE_SCORES', holeIndex }), []),
     nextHole: useCallback(() => dispatch({ type: 'NEXT_HOLE' }), []),
     undoHole: useCallback((holeIndex) => dispatch({ type: 'UNDO_HOLE', holeIndex }), []),
+    openAuditLog: useCallback(() => dispatch({ type: 'OPEN_AUDIT_LOG' }), []),
+    closeAuditLog: useCallback(() => dispatch({ type: 'CLOSE_AUDIT_LOG' }), []),
+    editHole: useCallback((holeIndex) => dispatch({ type: 'EDIT_HOLE', holeIndex }), []),
+    exitRound: useCallback(() => dispatch({ type: 'EXIT_ROUND' }), []),
     finishRound: useCallback(() => dispatch({ type: 'FINISH_ROUND' }), []),
     newGame: useCallback(() => dispatch({ type: 'NEW_GAME' }), []),
   };

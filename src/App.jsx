@@ -4,15 +4,12 @@ import SetupScreen from './components/screens/SetupScreen';
 import HoleScreen from './components/screens/HoleScreen';
 import HoleSummaryScreen from './components/screens/HoleSummaryScreen';
 import FinalSummaryScreen from './components/screens/FinalSummaryScreen';
-import { loadGameState } from './utils/storage';
+import AuditLogScreen from './components/screens/AuditLogScreen';
 
 export default function App() {
   const { state, ...actions } = useGameState();
 
-  const hasResumable = (() => {
-    const saved = loadGameState();
-    return saved && saved.phase && saved.phase !== 'home';
-  })();
+  const hasResumable = state.phase !== 'home' && state.phase !== 'setup';
 
   if (state.phase === 'home') {
     return (
@@ -34,6 +31,10 @@ export default function App() {
 
   if (state.phase === 'hole_summary') {
     return <HoleSummaryScreen state={state} actions={actions} />;
+  }
+
+  if (state.phase === 'audit_log') {
+    return <AuditLogScreen state={state} actions={actions} />;
   }
 
   if (state.phase === 'complete') {

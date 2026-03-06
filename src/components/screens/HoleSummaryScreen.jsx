@@ -25,7 +25,15 @@ export default function HoleSummaryScreen({ state, actions }) {
   return (
     <div className="flex flex-col min-h-screen bg-gray-950 pb-24">
       <div className="bg-gray-900 px-4 py-5 border-b border-gray-800">
-        <div className="text-gray-400 text-sm">Hole {hole.number} Summary</div>
+        <div className="flex items-center justify-between">
+          <div className="text-gray-400 text-sm">Hole {hole.number} Summary</div>
+          <button
+            onClick={actions.openAuditLog}
+            className="text-gray-400 hover:text-white text-sm px-2 py-1 rounded"
+          >
+            History
+          </button>
+        </div>
         <div className="text-white font-bold text-xl">Par {hole.par} · {hole.yardage} yds</div>
       </div>
 

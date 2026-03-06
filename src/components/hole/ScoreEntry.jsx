@@ -38,14 +38,12 @@ export default function ScoreEntry({ hole, players, holeIndex, onScoreChange }) 
                 −
               </button>
               <div className="flex flex-col items-center w-14">
-                <span className={`font-black text-2xl ${getScoreColor(gross, par)}`}>
-                  {gross ?? '—'}
+                <span className={`font-black text-2xl ${getScoreColor(gross ?? par, par)}`}>
+                  {gross ?? par}
                 </span>
-                {gross != null && (
-                  <span className={`text-xs ${getScoreColor(gross, par)}`}>
-                    {getScoreLabel(gross, par)}
-                  </span>
-                )}
+                <span className={`text-xs ${getScoreColor(gross ?? par, par)}`}>
+                  {getScoreLabel(gross ?? par, par)}
+                </span>
               </div>
               <button
                 onClick={() => onScoreChange(holeIndex, player.id, (gross ?? par) + 1)}

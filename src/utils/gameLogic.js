@@ -100,25 +100,15 @@ function twobestNetScores(teamIds, netScores) {
  * hammerWinner is index into teams array (0 or 1), or null for push.
  */
 export function resolveHammer(hole, teams, netScores) {
-  const { hammerConceded, hammerConcedeTeam, hammerValue, wolfAlone } = hole;
-
-  if (hammerConceded && hammerConcedeTeam != null) {
-    const winner = hammerConcedeTeam === 0 ? 1 : 0;
-    return { hammerWinner: winner, finalHammerValue: hammerValue };
-  }
+  const { hammerValue, wolfAlone } = hole;
 
   const team0 = teams[0];
   const team1 = teams[1];
 
   let score0, score1;
 
-  // 5-player: compare 2 best net scores if team size > 2
   if (wolfAlone) {
-    // wolf alone vs 3: wolf's single best vs team's best 2
-    score0 = bestNetScore(team0, netScores);
-    const [b1, b2] = twobestNetScores(team1, netScores);
-    score1 = b1; // wolf alone: compare best of 3 vs wolf
-    // Actually for wolf alone: wolf's score vs best of the other 3
+    // Wolf alone: wolf's score vs best of the other team
     score0 = bestNetScore(team0, netScores);
     score1 = bestNetScore(team1, netScores);
   } else if (team0.length > 2 || team1.length > 2) {
