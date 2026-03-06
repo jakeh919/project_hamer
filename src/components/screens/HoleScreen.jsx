@@ -6,9 +6,10 @@ import ScoreEntry from '../hole/ScoreEntry';
 import Button from '../ui/Button';
 
 export default function HoleScreen({ state, actions }) {
-  const { currentHoleIndex, holes, players, gameMode, teamMode, editingFromAudit } = state;
+  const { currentHoleIndex, holes, players, gameMode, teamMode, editingFromAudit, baseBet } = state;
   const hole = holes[currentHoleIndex];
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   if (!hole) return null;
 
@@ -34,12 +35,20 @@ export default function HoleScreen({ state, actions }) {
           >
             ✕ Exit
           </button>
-          <button
-            onClick={actions.openAuditLog}
-            className="text-gray-400 hover:text-white text-sm px-2 py-1 rounded"
-          >
-            History
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="text-gray-400 hover:text-white text-sm px-2 py-1 rounded"
+            >
+              ⚙ Settings
+            </button>
+            <button
+              onClick={actions.openAuditLog}
+              className="text-gray-400 hover:text-white text-sm px-2 py-1 rounded"
+            >
+              History
+            </button>
+          </div>
         </div>
         <div className="flex items-end gap-4">
           <span className="text-white font-black text-5xl">{hole.number}</span>
@@ -100,6 +109,38 @@ export default function HoleScreen({ state, actions }) {
           {!teamsReady ? 'Set teams first' : editingFromAudit ? 'Save Changes' : 'Lock Scores & Finish Hole'}
         </Button>
       </div>
+
+      {/* Settings overlay */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
+          <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm flex flex-col gap-5">
+            <h3 className="text-white font-bold text-lg">Settings</h3>
+            <div className="flex flex-col gap-2">
+              <span className="text-gray-300 font-medium">Bet Unit</span>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => actions.setBaseBet(baseBet - 1)}
+                  disabled={baseBet <= 1}
+                  className="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 disabled:opacity-30 text-white font-bold text-2xl flex items-center justify-center"
+                >
+                  −
+                </button>
+                <span className="text-white font-black text-4xl flex-1 text-center">${baseBet}</span>
+                <button
+                  onClick={() => actions.setBaseBet(baseBet + 1)}
+                  className="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-2xl flex items-center justify-center"
+                >
+                  +
+                </button>
+              </div>
+              <p className="text-gray-500 text-xs">Applies to future holes. Current hole updates immediately.</p>
+            </div>
+            <Button onClick={() => setShowSettings(false)} className="w-full">
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Exit confirmation overlay */}
       {showExitConfirm && (

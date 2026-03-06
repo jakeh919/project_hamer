@@ -297,6 +297,21 @@ function reducer(state, action) {
       };
     }
 
+    case 'SET_BASE_BET': {
+      const newBet = Math.max(1, action.baseBet);
+      const holes = [...state.holes];
+      // Recompute the current hole's hammer value with the new base bet
+      const idx = state.currentHoleIndex;
+      if (holes[idx]) {
+        const hole = { ...holes[idx] };
+        const newBase = getHammerStartValue(newBet, hole.number, state.gameMode, hole.wolfAlone);
+        hole.hammerBaseValue = newBase;
+        hole.hammerValue = newBase * Math.pow(2, hole.hammerCount ?? 0);
+        holes[idx] = hole;
+      }
+      return { ...state, baseBet: newBet, holes };
+    }
+
     case 'EXIT_ROUND':
       return { ...state, phase: 'home' };
 
@@ -346,6 +361,7 @@ export function useGameState() {
     openAuditLog: useCallback(() => dispatch({ type: 'OPEN_AUDIT_LOG' }), []),
     closeAuditLog: useCallback(() => dispatch({ type: 'CLOSE_AUDIT_LOG' }), []),
     editHole: useCallback((holeIndex) => dispatch({ type: 'EDIT_HOLE', holeIndex }), []),
+    setBaseBet: useCallback((baseBet) => dispatch({ type: 'SET_BASE_BET', baseBet }), []),
     exitRound: useCallback(() => dispatch({ type: 'EXIT_ROUND' }), []),
     finishRound: useCallback(() => dispatch({ type: 'FINISH_ROUND' }), []),
     newGame: useCallback(() => dispatch({ type: 'NEW_GAME' }), []),
