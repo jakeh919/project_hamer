@@ -35,10 +35,8 @@ export default function ScoreEntry({ hole, players, holeIndex, onScoreChange }) 
               {getsStroke && (
                 <span
                   title="Gets a stroke on this hole"
-                  className="w-4 h-4 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center font-bold leading-none"
-                >
-                  +
-                </span>
+                  className="w-2 h-2 rounded-full bg-blue-400 inline-block flex-shrink-0"
+                />
               )}
             </div>
             <div className="flex items-center gap-2">

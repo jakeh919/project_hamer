@@ -2,36 +2,32 @@ export default function HammerTracker({ hole, holeIndex, onIncrement, onDecremen
   const { hammerCount, hammerValue, hammerBaseValue } = hole;
 
   return (
-    <div className="bg-gray-800 rounded-xl p-4 flex flex-col gap-3">
+    <div className="bg-gray-800 rounded-xl p-4 flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <span className="text-gray-400 text-sm font-medium">Hammers</span>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-sm font-medium">Hammers</span>
+          {hammerCount > 0 && (
+            <span className="text-gray-500 text-xs">
+              {'🔨'.repeat(Math.min(hammerCount, 5))}
+            </span>
+          )}
+        </div>
         <span className="text-yellow-400 font-black text-2xl">${hammerValue}</span>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex gap-3">
         <button
           onClick={() => onDecrement(holeIndex)}
           disabled={hammerCount === 0}
-          className="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 disabled:opacity-30 text-white font-bold text-2xl flex items-center justify-center"
+          className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 font-semibold text-sm disabled:opacity-30 hover:border-gray-400 hover:text-white transition-colors"
         >
-          −
+          Remove
         </button>
-
-        <div className="flex-1 flex items-center justify-center gap-2">
-          {hammerCount === 0 ? (
-            <span className="text-gray-500 text-sm">No hammers yet</span>
-          ) : (
-            Array.from({ length: hammerCount }).map((_, i) => (
-              <span key={i} className="text-2xl">🔨</span>
-            ))
-          )}
-        </div>
-
         <button
           onClick={() => onIncrement(holeIndex)}
-          className="w-12 h-12 rounded-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-2xl flex items-center justify-center"
+          className="flex-1 py-3 rounded-xl bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-black font-bold text-sm transition-colors"
         >
-          +
+          🔨 Hammer
         </button>
       </div>
 
