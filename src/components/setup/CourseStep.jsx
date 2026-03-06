@@ -19,12 +19,19 @@ function defaultHoles() {
 }
 
 function mapApiHoles(apiHoles) {
-  return apiHoles.map(h => ({
-    number: h.number,
+  return apiHoles.map((h, i) => ({
+    number: i + 1,
     par: h.par ?? 4,
     yardage: h.yardage ?? 0,
-    rating: h.handicap ?? h.number,
+    rating: h.handicap ?? (i + 1),
   }));
+}
+
+// Extract all available tees from API course, male first
+function extractTees(apiCourse) {
+  const male = (apiCourse.tees?.male ?? []).map(t => ({ ...t, gender: 'male' }));
+  const female = (apiCourse.tees?.female ?? []).map(t => ({ ...t, gender: 'female' }));
+  return [...male, ...female];
 }
 
 // ── Saved tab ────────────────────────────────────────────────────────────────
@@ -103,13 +110,13 @@ function SearchTab({ onCourseReady }) {
       if (!res.ok) throw new Error(`Failed to load course (${res.status})`);
       const data = await res.json();
       const apiCourse = data.course;
-      const holes = mapApiHoles(apiCourse.holes ?? []);
-      const course = {
-        id: generateId(),
-        name: [apiCourse.club_name, apiCourse.course_name].filter(Boolean).join(' — '),
-        holes: holes.length === 18 ? holes : defaultHoles(),
-      };
-      onCourseReady(course);
+      const tees = extractTees(apiCourse);
+      if (tees.length === 0) throw new Error('No tee data found for this course.');
+      const courseName = [apiCourse.club_name, apiCourse.course_name]
+        .filter(Boolean)
+        .join(' — ')
+        .replace(/ — \1$/, ''); // dedup if same string
+      onCourseReady({ apiCourse, tees, courseName });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -273,25 +280,89 @@ function ManualTab({ onSave }) {
   );
 }
 
+// ── Tee picker (shown after selecting a course from search) ──────────────────
+function TeePicker({ courseName, tees, onConfirm, onCancel }) {
+  const [selectedTeeIdx, setSelectedTeeIdx] = useState(0);
+  const selectedTee = tees[selectedTeeIdx];
+  const holes = mapApiHoles(selectedTee?.holes ?? []);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-white font-semibold">{courseName}</p>
+        <p className="text-gray-400 text-sm mt-0.5">Select which tees you're playing</p>
+      </div>
+
+      {/* Tee selector */}
+      <div className="flex flex-wrap gap-2">
+        {tees.map((t, i) => (
+          <button
+            key={i}
+            onClick={() => setSelectedTeeIdx(i)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+              i === selectedTeeIdx ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            {t.tee_name}
+            {t.total_yards ? <span className="ml-1 opacity-60 font-normal text-xs">{t.total_yards}y</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {/* Hole preview */}
+      <div className="bg-gray-800 rounded-xl p-3 overflow-x-auto max-h-72 overflow-y-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-gray-800">
+            <tr className="text-gray-500">
+              <th className="text-left pb-1.5">Hole</th>
+              <th className="text-center pb-1.5">Par</th>
+              <th className="text-center pb-1.5">Yds</th>
+              <th className="text-center pb-1.5">Hdcp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {holes.map(h => (
+              <tr key={h.number} className="border-t border-gray-700">
+                <td className="py-1.5 text-gray-400 font-medium">{h.number}</td>
+                <td className="py-1.5 text-center text-white">{h.par}</td>
+                <td className="py-1.5 text-center text-gray-300">{h.yardage}</td>
+                <td className="py-1.5 text-center text-gray-300">{h.rating}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex gap-3">
+        <Button onClick={onCancel} variant="ghost" className="flex-1">Cancel</Button>
+        <Button onClick={() => onConfirm(courseName, holes)} className="flex-1">
+          Save & Use Course
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function CourseStep({ selectedCourse, onNext, onBack }) {
   const [courses, setCourses] = useState(() => loadCourses());
   const [tab, setTab] = useState('saved');
   const [pickedId, setPickedId] = useState(selectedCourse?.id ?? '');
-  // Course fetched from API, pending confirmation
-  const [pendingCourse, setPendingCourse] = useState(null);
+  // Data returned from API search, pending tee selection
+  const [pendingApi, setPendingApi] = useState(null); // { courseName, tees }
 
   const pickedCourse = courses.find(c => c.id === pickedId);
 
-  function handleApiCourse(course) {
-    setPendingCourse(course);
+  function handleApiCourse({ apiCourse, tees, courseName }) {
+    setPendingApi({ courseName, tees });
   }
 
-  function confirmApiCourse() {
-    saveCourse(pendingCourse);
+  function confirmTee(courseName, holes) {
+    const course = { id: generateId(), name: courseName, holes };
+    saveCourse(course);
     setCourses(loadCourses());
-    setPickedId(pendingCourse.id);
-    setPendingCourse(null);
+    setPickedId(course.id);
+    setPendingApi(null);
     setTab('saved');
   }
 
@@ -307,6 +378,22 @@ export default function CourseStep({ selectedCourse, onNext, onBack }) {
     { id: 'manual', label: 'Manual' },
   ];
 
+  if (pendingApi) {
+    return (
+      <div className="flex flex-col gap-5">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Select Tees</h2>
+        </div>
+        <TeePicker
+          courseName={pendingApi.courseName}
+          tees={pendingApi.tees}
+          onConfirm={confirmTee}
+          onCancel={() => setPendingApi(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -314,12 +401,11 @@ export default function CourseStep({ selectedCourse, onNext, onBack }) {
         <p className="text-gray-400 text-sm mt-1">Search the course database or enter manually</p>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 bg-gray-800 p-1 rounded-xl">
         {tabs.map(t => (
           <button
             key={t.id}
-            onClick={() => { setTab(t.id); setPendingCourse(null); }}
+            onClick={() => setTab(t.id)}
             className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${tab === t.id ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             {t.label}
@@ -327,74 +413,30 @@ export default function CourseStep({ selectedCourse, onNext, onBack }) {
         ))}
       </div>
 
-      {/* Pending API course confirmation */}
-      {pendingCourse ? (
-        <div className="flex flex-col gap-4">
-          <div className="bg-gray-800 rounded-xl p-4">
-            <p className="text-white font-semibold mb-1">{pendingCourse.name}</p>
-            <p className="text-gray-400 text-sm mb-3">{pendingCourse.holes.length} holes loaded from API</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-gray-500">
-                    <th className="text-left pb-1">Hole</th>
-                    <th className="text-center pb-1">Par</th>
-                    <th className="text-center pb-1">Yds</th>
-                    <th className="text-center pb-1">Hdcp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingCourse.holes.map(h => (
-                    <tr key={h.number} className="border-t border-gray-700">
-                      <td className="py-1 text-gray-400">{h.number}</td>
-                      <td className="py-1 text-center text-white">{h.par}</td>
-                      <td className="py-1 text-center text-gray-300">{h.yardage}</td>
-                      <td className="py-1 text-center text-gray-300">{h.rating}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <Button onClick={() => setPendingCourse(null)} variant="ghost" className="flex-1">
-              Cancel
-            </Button>
-            <Button onClick={confirmApiCourse} className="flex-1">
-              Save & Use This Course
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {tab === 'saved' && (
-            <SavedTab
-              courses={courses}
-              pickedId={pickedId}
-              onPick={setPickedId}
-              onNew={() => setTab('manual')}
-            />
-          )}
-          {tab === 'search' && <SearchTab onCourseReady={handleApiCourse} />}
-          {tab === 'manual' && <ManualTab onSave={handleManualSave} />}
-        </>
+      {tab === 'saved' && (
+        <SavedTab
+          courses={courses}
+          pickedId={pickedId}
+          onPick={setPickedId}
+          onNew={() => setTab('manual')}
+        />
       )}
+      {tab === 'search' && <SearchTab onCourseReady={handleApiCourse} />}
+      {tab === 'manual' && <ManualTab onSave={handleManualSave} />}
 
-      {!pendingCourse && (
-        <div className="flex gap-3">
-          <Button onClick={onBack} variant="ghost" size="lg" className="flex-1">
-            Back
-          </Button>
-          <Button
-            onClick={() => pickedCourse && onNext(pickedCourse)}
-            disabled={!pickedCourse}
-            size="lg"
-            className="flex-1"
-          >
-            {pickedCourse ? `Next: Bet` : 'Select a course'}
-          </Button>
-        </div>
-      )}
+      <div className="flex gap-3">
+        <Button onClick={onBack} variant="ghost" size="lg" className="flex-1">
+          Back
+        </Button>
+        <Button
+          onClick={() => pickedCourse && onNext(pickedCourse)}
+          disabled={!pickedCourse}
+          size="lg"
+          className="flex-1"
+        >
+          {pickedCourse ? 'Next: Bet' : 'Select a course'}
+        </Button>
+      </div>
     </div>
   );
 }
