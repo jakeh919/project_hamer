@@ -46,3 +46,13 @@ export function deleteCourse(courseId) {
   const courses = loadCourses().filter(c => c.id !== courseId);
   localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
 }
+
+const API_KEY_KEY = 'hammer_golf_api_key';
+
+export function loadApiKey() {
+  return localStorage.getItem(API_KEY_KEY) ?? '';
+}
+
+export function saveApiKey(key) {
+  localStorage.setItem(API_KEY_KEY, key.trim());
+}
