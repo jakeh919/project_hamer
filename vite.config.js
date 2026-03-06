@@ -5,4 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/project_hamer/',
+  define: {
+    __GOLF_API_KEY__: JSON.stringify('MWE6BSAFMGCRSR6RSESW5DOHMU'),
+  },
 })

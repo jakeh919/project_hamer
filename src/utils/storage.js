@@ -50,7 +50,7 @@ export function deleteCourse(courseId) {
 const API_KEY_KEY = 'hammer_golf_api_key';
 
 export function loadApiKey() {
-  return localStorage.getItem(API_KEY_KEY) ?? '';
+  return localStorage.getItem(API_KEY_KEY) || (typeof __GOLF_API_KEY__ !== 'undefined' ? __GOLF_API_KEY__ : '');
 }
 
 export function saveApiKey(key) {
